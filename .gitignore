@@ -1,0 +1,13 @@
+# APIキーなどの資格情報。絶対にコミットしない
+.env
+.env.*
+*.key
+
+# エディタ・OS
+.DS_Store
+.vscode/
+.idea/
+
+# 念のため
+node_modules/
+*.log
