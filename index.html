@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>プロダクト名</title>
+<title>部室BGM</title>
 <style>
   /* ============================================================
      見た目。動線が通ってから、時間が余ったら手を入れる
@@ -26,36 +26,62 @@
   button:hover { opacity: .85; }
   .row { display: flex; gap: 8px; align-items: center; }
   .muted { color: #666; font-size: .9rem; }
+
+  .field { margin-bottom: 8px; }
+  .song-list { list-style: none; margin: 0; padding: 0; }
+  .song-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 0; border-bottom: 1px solid var(--line);
+  }
+  .song-item:last-child { border-bottom: 0; }
+  .song-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .song-item.is-playing .song-title { color: var(--accent); font-weight: bold; }
+  .btn-sub { background: #6b7280; }
+  .btn-danger { background: #b91c1c; }
+  iframe.player {
+    width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 4px;
+  }
 </style>
 </head>
 <body>
 <main>
 
-  <h1>プロダクト名</h1>
-  <p class="lead">一言で何か（誰の、何を解決するか）</p>
+  <h1>部室BGM</h1>
+  <p class="lead">文化系サークルの部室でBGMを流すときに使う、候補から人が選んで再生するシンプルな音楽プレイヤー</p>
 
   <!-- ============================================================
        ここから下が本体。セクションを足したり消したりして作る
        ============================================================ -->
 
   <section>
-    <h2>入力</h2>
+    <h2>曲を追加（YouTube Music から選ぶ）</h2>
+    <div class="field">
+      <input id="title-input" type="text" placeholder="曲名（わかりやすい名前でOK）">
+    </div>
+    <div class="field">
+      <input id="url-input" type="text" placeholder="YouTube Music の URL（例: https://music.youtube.com/watch?v=...）">
+    </div>
     <div class="row">
-      <input id="input" type="text" placeholder="ここに入力">
-      <button id="save">保存</button>
+      <button id="add">候補に追加</button>
     </div>
   </section>
 
   <section>
-    <h2>結果</h2>
-    <div id="output" class="muted">まだ何もありません</div>
+    <h2>候補一覧</h2>
+    <ul id="song-list" class="song-list"></ul>
+    <div id="empty-message" class="muted">まだ候補がありません</div>
   </section>
 
   <!-- ============================================================
-       AI に任せない部分は、ここに置くことが多いです。
-       AI が候補を出して、最後に人が選ぶ／決める場所を1つ残してください。
-       （例）候補を3つ並べて、人がボタンで選ぶ
+       AI に任せない部分：
+       候補の中から実際に再生する1曲を選ぶのは、必ず人がボタンを押す。
+       自動再生・自動選曲はしない。
        ============================================================ -->
+
+  <section>
+    <h2>再生中</h2>
+    <div id="player-area" class="muted">まだ再生していません</div>
+  </section>
 
 </main>
 
@@ -69,9 +95,13 @@ const STORAGE_KEY = 'app-data';
 
 function loadData() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {};
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return {
+      songs: Array.isArray(data?.songs) ? data.songs : [],
+      nowPlayingId: data?.nowPlayingId ?? null,
+    };
   } catch {
-    return {};   // 壊れた値が入っていても落ちないようにする
+    return { songs: [], nowPlayingId: null };   // 壊れた値が入っていても落ちないようにする
   }
 }
 
@@ -80,25 +110,113 @@ function saveData(data) {
 }
 
 // ============================================================
-// ここから下が処理。動線を1本だけ通す
-//   ① 人が入力すること → ② 画面で起きること → ③ 人が目にする結果
-// この3つが繋がったら、9/4 は合格です。枝分かれは作らないでください。
+// YouTube の URL から動画IDを取り出す
+// （music.youtube.com / www.youtube.com / youtu.be に対応）
 // ============================================================
 
-const input  = document.getElementById('input');
-const output = document.getElementById('output');
+function extractVideoId(url) {
+  try {
+    const u = new URL(url);
+    if (u.searchParams.get('v')) return u.searchParams.get('v');
+    if (u.hostname === 'youtu.be') return u.pathname.slice(1);
+  } catch {
+    // 不正なURLはそのまま無視する
+  }
+  return null;
+}
+
+// ============================================================
+// ここから下が処理。動線を1本だけ通す
+//   ① 曲を追加する → ② 候補一覧に出る → ③ 人が選んで再生する
+// ============================================================
+
+const titleInput  = document.getElementById('title-input');
+const urlInput    = document.getElementById('url-input');
+const songList    = document.getElementById('song-list');
+const emptyMessage = document.getElementById('empty-message');
+const playerArea  = document.getElementById('player-area');
 
 function render() {
   const data = loadData();
-  output.textContent = data.text ? data.text : 'まだ何もありません';
-  output.className = data.text ? '' : 'muted';
+
+  songList.innerHTML = '';
+  emptyMessage.style.display = data.songs.length ? 'none' : '';
+
+  data.songs.forEach((song) => {
+    const li = document.createElement('li');
+    li.className = 'song-item' + (song.id === data.nowPlayingId ? ' is-playing' : '');
+
+    const title = document.createElement('span');
+    title.className = 'song-title';
+    title.textContent = song.title;
+    li.appendChild(title);
+
+    const playBtn = document.createElement('button');
+    playBtn.textContent = '再生';
+    playBtn.addEventListener('click', () => {
+      const d = loadData();
+      d.nowPlayingId = song.id;
+      saveData(d);
+      render();
+    });
+    li.appendChild(playBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = '削除';
+    deleteBtn.className = 'btn-danger';
+    deleteBtn.addEventListener('click', () => {
+      const d = loadData();
+      d.songs = d.songs.filter((s) => s.id !== song.id);
+      if (d.nowPlayingId === song.id) d.nowPlayingId = null;
+      saveData(d);
+      render();
+    });
+    li.appendChild(deleteBtn);
+
+    songList.appendChild(li);
+  });
+
+  const nowPlaying = data.songs.find((s) => s.id === data.nowPlayingId);
+  if (!nowPlaying) {
+    playerArea.className = 'muted';
+    playerArea.textContent = 'まだ再生していません';
+  } else if (nowPlaying.videoId) {
+    playerArea.className = '';
+    playerArea.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.className = 'player';
+    iframe.src = 'https://www.youtube.com/embed/' + nowPlaying.videoId;
+    iframe.title = nowPlaying.title;
+    iframe.allow = 'autoplay; encrypted-media';
+    playerArea.appendChild(iframe);
+  } else {
+    playerArea.className = '';
+    playerArea.innerHTML = '';
+    const link = document.createElement('a');
+    link.href = nowPlaying.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = nowPlaying.title + ' を YouTube Music で開く';
+    playerArea.appendChild(link);
+  }
 }
 
-document.getElementById('save').addEventListener('click', () => {
+document.getElementById('add').addEventListener('click', () => {
+  const title = titleInput.value.trim();
+  const url = urlInput.value.trim();
+  if (!title || !url) return;
+
   const data = loadData();
-  data.text = input.value;
+  data.songs.push({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2),
+    title,
+    url,
+    videoId: extractVideoId(url),
+  });
   saveData(data);
-  input.value = '';
+
+  titleInput.value = '';
+  urlInput.value = '';
   render();
 });
 
