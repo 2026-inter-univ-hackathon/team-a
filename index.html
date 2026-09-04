@@ -36,6 +36,7 @@
   .song-item:last-child { border-bottom: 0; }
   .song-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .song-item.is-playing .song-title { color: var(--accent); font-weight: bold; }
+  .song-item.is-suggested { background: #fff7d6; }
   .btn-sub { background: #6b7280; }
   .btn-danger { background: #b91c1c; }
   iframe.player {
@@ -70,12 +71,17 @@
     <h2>候補一覧</h2>
     <ul id="song-list" class="song-list"></ul>
     <div id="empty-message" class="muted">まだ候補がありません</div>
+    <div class="row" style="margin-top:12px;">
+      <button id="pick-random" class="btn-sub">🎲 ランダムに1曲選ぶ</button>
+    </div>
+    <div id="random-message" class="muted"></div>
   </section>
 
   <!-- ============================================================
        AI に任せない部分：
-       候補の中から最初に再生する1曲を選ぶのは、必ず人がボタンを押す。
-       （低評価による次の曲への切り替えのみ自動。チームで決定済み）
+       候補の中から実際に再生する1曲を選ぶのは、必ず人が「再生」ボタンを押す。
+       🎲ランダムボタンは候補をハイライトするだけで、自動再生はしない。
+       （低評価による削除・次の曲への切り替えのみ自動。チームで決定済み）
        ============================================================ -->
 
   <section>
@@ -142,6 +148,11 @@ const emptyMessage = document.getElementById('empty-message');
 const playerArea  = document.getElementById('player-area');
 const ratingArea    = document.getElementById('rating-area');
 const ratingMessage = document.getElementById('rating-message');
+const randomMessage = document.getElementById('random-message');
+
+// 「おすすめ」表示だけの候補ID。再生を始めるのは常に人が「再生」ボタンを押したとき
+// （AI に任せない部分のルールを守るため、ここでは自動再生しない）
+let suggestedId = null;
 
 function render() {
   const data = loadData();
@@ -151,7 +162,10 @@ function render() {
 
   data.songs.forEach((song) => {
     const li = document.createElement('li');
-    li.className = 'song-item' + (song.id === data.nowPlayingId ? ' is-playing' : '');
+    let className = 'song-item';
+    if (song.id === data.nowPlayingId) className += ' is-playing';
+    if (song.id === suggestedId) className += ' is-suggested';
+    li.className = className;
 
     const title = document.createElement('span');
     title.className = 'song-title';
@@ -164,6 +178,7 @@ function render() {
       const d = loadData();
       d.nowPlayingId = song.id;
       saveData(d);
+      suggestedId = null;
       render();
     });
     li.appendChild(playBtn);
@@ -214,9 +229,9 @@ function render() {
 // ============================================================
 // 再生中の曲への評価
 //   👍 高評価: そのまま再生を続ける（候補には残す）
-//   👎 低評価: 再生を停止し、次の候補を自動で再生する
+//   👎 低評価: 候補一覧から削除し、残りの候補からランダムに次の曲を自動再生する
 //   （最初にどの曲を再生するかは人がボタンを押して決める。
-//    低評価による切り替えのみ自動にする、とチームで決定済み）
+//    低評価による削除・切り替えのみ自動にする、とチームで決定済み）
 // ============================================================
 
 document.getElementById('rate-up').addEventListener('click', () => {
@@ -230,16 +245,32 @@ document.getElementById('rate-down').addEventListener('click', () => {
   const currentIndex = data.songs.findIndex((s) => s.id === data.nowPlayingId);
   if (currentIndex === -1) return;
 
-  const next = data.songs.length > 1
-    ? data.songs[(currentIndex + 1) % data.songs.length]
+  data.songs.splice(currentIndex, 1);
+
+  const next = data.songs.length
+    ? data.songs[Math.floor(Math.random() * data.songs.length)]
     : null;
 
   data.nowPlayingId = next ? next.id : null;
+  suggestedId = null;
   saveData(data);
   render();
   ratingMessage.textContent = next
-    ? '👎 低評価にしました。次の曲を再生します'
-    : '👎 低評価にしました。他に候補がないため停止しました';
+    ? '👎 低評価にしました。候補から削除し、次の曲を再生します'
+    : '👎 低評価にしました。候補から削除しました。他に候補がないため停止しました';
+});
+
+document.getElementById('pick-random').addEventListener('click', () => {
+  const data = loadData();
+  if (!data.songs.length) {
+    randomMessage.textContent = '候補がありません。先に曲を追加してください';
+    return;
+  }
+
+  const picked = data.songs[Math.floor(Math.random() * data.songs.length)];
+  suggestedId = picked.id;
+  render();
+  randomMessage.textContent = '🎲「' + picked.title + '」を選びました。再生するには「再生」ボタンを押してください';
 });
 
 document.getElementById('add').addEventListener('click', () => {
