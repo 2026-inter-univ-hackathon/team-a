@@ -74,13 +74,18 @@
 
   <!-- ============================================================
        AI に任せない部分：
-       候補の中から実際に再生する1曲を選ぶのは、必ず人がボタンを押す。
-       自動再生・自動選曲はしない。
+       候補の中から最初に再生する1曲を選ぶのは、必ず人がボタンを押す。
+       （低評価による次の曲への切り替えのみ自動。チームで決定済み）
        ============================================================ -->
 
   <section>
     <h2>再生中</h2>
     <div id="player-area" class="muted">まだ再生していません</div>
+    <div id="rating-area" class="row" style="margin-top:8px; display:none;">
+      <button id="rate-up">👍 高評価</button>
+      <button id="rate-down" class="btn-sub">👎 低評価</button>
+    </div>
+    <div id="rating-message" class="muted"></div>
   </section>
 
 </main>
@@ -135,6 +140,8 @@ const urlInput    = document.getElementById('url-input');
 const songList    = document.getElementById('song-list');
 const emptyMessage = document.getElementById('empty-message');
 const playerArea  = document.getElementById('player-area');
+const ratingArea    = document.getElementById('rating-area');
+const ratingMessage = document.getElementById('rating-message');
 
 function render() {
   const data = loadData();
@@ -185,7 +192,7 @@ function render() {
     playerArea.innerHTML = '';
     const iframe = document.createElement('iframe');
     iframe.className = 'player';
-    iframe.src = 'https://www.youtube.com/embed/' + nowPlaying.videoId;
+    iframe.src = 'https://www.youtube.com/embed/' + nowPlaying.videoId + '?autoplay=1';
     iframe.title = nowPlaying.title;
     iframe.allow = 'autoplay; encrypted-media';
     playerArea.appendChild(iframe);
@@ -199,7 +206,41 @@ function render() {
     link.textContent = nowPlaying.title + ' を YouTube Music で開く';
     playerArea.appendChild(link);
   }
+
+  ratingArea.style.display = nowPlaying ? '' : 'none';
+  ratingMessage.textContent = '';
 }
+
+// ============================================================
+// 再生中の曲への評価
+//   👍 高評価: そのまま再生を続ける（候補には残す）
+//   👎 低評価: 再生を停止し、次の候補を自動で再生する
+//   （最初にどの曲を再生するかは人がボタンを押して決める。
+//    低評価による切り替えのみ自動にする、とチームで決定済み）
+// ============================================================
+
+document.getElementById('rate-up').addEventListener('click', () => {
+  const data = loadData();
+  if (!data.nowPlayingId) return;
+  ratingMessage.textContent = '👍 高評価にしました。このまま再生を続けます';
+});
+
+document.getElementById('rate-down').addEventListener('click', () => {
+  const data = loadData();
+  const currentIndex = data.songs.findIndex((s) => s.id === data.nowPlayingId);
+  if (currentIndex === -1) return;
+
+  const next = data.songs.length > 1
+    ? data.songs[(currentIndex + 1) % data.songs.length]
+    : null;
+
+  data.nowPlayingId = next ? next.id : null;
+  saveData(data);
+  render();
+  ratingMessage.textContent = next
+    ? '👎 低評価にしました。次の曲を再生します'
+    : '👎 低評価にしました。他に候補がないため停止しました';
+});
 
 document.getElementById('add').addEventListener('click', () => {
   const title = titleInput.value.trim();
