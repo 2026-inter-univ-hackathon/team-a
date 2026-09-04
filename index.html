@@ -64,7 +64,9 @@
     </div>
     <div class="row">
       <button id="add">候補に追加</button>
+      <button id="fetch-title" class="btn-sub">URL から曲名を取得</button>
     </div>
+    <div id="fetch-message" class="muted"></div>
   </section>
 
   <section>
@@ -81,7 +83,7 @@
        AI に任せない部分：
        候補の中から実際に再生する1曲を選ぶのは、必ず人が「再生」ボタンを押す。
        🎲ランダムボタンは候補をハイライトするだけで、自動再生はしない。
-       （低評価による削除・次の曲への切り替えのみ自動。チームで決定済み）
+       （低評価・スキップによる次の曲への切り替えのみ自動。曲は削除しない。チームで決定済み）
        ============================================================ -->
 
   <section>
@@ -90,6 +92,7 @@
     <div id="rating-area" class="row" style="margin-top:8px; display:none;">
       <button id="rate-up">👍 高評価</button>
       <button id="rate-down" class="btn-sub">👎 低評価</button>
+      <button id="skip" class="btn-sub">⏭ スキップ</button>
     </div>
     <div id="rating-message" class="muted"></div>
   </section>
@@ -137,6 +140,25 @@ function extractVideoId(url) {
 }
 
 // ============================================================
+// YouTube の URL から曲名を取り出す（oEmbed）
+//   ネットワークが使えるときだけ動く「おまけ」。
+//   取得できなくても曲名は手で入力できるので、オフラインでも動線は止まらない
+//   （取った曲名は入力欄に入れるだけ。そのまま使うか直すかは人が決める）
+// ============================================================
+
+async function fetchTitleFromUrl(url) {
+  const videoId = extractVideoId(url);
+  const target = videoId ? 'https://www.youtube.com/watch?v=' + videoId : url;
+  const endpoint = 'https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(target);
+
+  const res = await fetch(endpoint);
+  if (!res.ok) throw new Error('oembed ' + res.status);
+  const data = await res.json();
+  if (!data.title) throw new Error('title がない');
+  return data.title;
+}
+
+// ============================================================
 // ここから下が処理。動線を1本だけ通す
 //   ① 曲を追加する → ② 候補一覧に出る → ③ 人が選んで再生する
 // ============================================================
@@ -149,10 +171,56 @@ const playerArea  = document.getElementById('player-area');
 const ratingArea    = document.getElementById('rating-area');
 const ratingMessage = document.getElementById('rating-message');
 const randomMessage = document.getElementById('random-message');
+const fetchTitleBtn = document.getElementById('fetch-title');
+const fetchMessage  = document.getElementById('fetch-message');
+
+// file:// で開いているか。YouTube は Referer の無いページからの埋め込み再生を拒否する（エラー153）
+const IS_FILE_URL = location.protocol === 'file:';
 
 // 「おすすめ」表示だけの候補ID。再生を始めるのは常に人が「再生」ボタンを押したとき
 // （AI に任せない部分のルールを守るため、ここでは自動再生しない）
 let suggestedId = null;
+
+// ============================================================
+// 埋め込みが使えないときの再生（別ウィンドウ）
+//   エラー153（埋め込み禁止の曲／file:// で Referer が無い）はアプリ側では解除できないので、
+//   YouTube のページを別ウィンドウで開いて再生する。
+//   ウィンドウには名前をつけて使い回すので、次の曲に進むと中身が入れ替わる。
+//   おかげで 👎低評価・⏭スキップ を押したときに前の曲の音が鳴り続けない
+// ============================================================
+
+const PLAYER_WINDOW_NAME = 'bushitsu-bgm-player';
+let playerWindow = null;
+
+// この曲をページ内の埋め込みプレイヤーで再生できるか
+function canEmbed(song) {
+  return Boolean(song.videoId) && !IS_FILE_URL;
+}
+
+// 別ウィンドウで再生する。ボタンを押した流れの中で呼ぶこと
+// （そうしないとポップアップとしてブロックされる）
+function openPlayerWindow(song) {
+  playerWindow = window.open(song.url, PLAYER_WINDOW_NAME);
+  return Boolean(playerWindow);
+}
+
+function closePlayerWindow() {
+  if (playerWindow && !playerWindow.closed) playerWindow.close();
+  playerWindow = null;
+}
+
+// 再生中の曲に合わせて別ウィンドウを開き直す／閉じる。
+// 埋め込みで再生できる曲のときは何もしない
+function syncPlayerWindow(song) {
+  if (!song) {
+    closePlayerWindow();
+    return;
+  }
+  if (canEmbed(song)) return;
+  if (!openPlayerWindow(song)) {
+    ratingMessage.textContent = 'ポップアップがブロックされました。「YouTube Music で開く」リンクから開いてください';
+  }
+}
 
 function render() {
   const data = loadData();
@@ -180,6 +248,7 @@ function render() {
       saveData(d);
       suggestedId = null;
       render();
+      syncPlayerWindow(song);
     });
     li.appendChild(playBtn);
 
@@ -189,7 +258,10 @@ function render() {
     deleteBtn.addEventListener('click', () => {
       const d = loadData();
       d.songs = d.songs.filter((s) => s.id !== song.id);
-      if (d.nowPlayingId === song.id) d.nowPlayingId = null;
+      if (d.nowPlayingId === song.id) {
+        d.nowPlayingId = null;
+        closePlayerWindow();
+      }
       saveData(d);
       render();
     });
@@ -202,24 +274,37 @@ function render() {
   if (!nowPlaying) {
     playerArea.className = 'muted';
     playerArea.textContent = 'まだ再生していません';
-  } else if (nowPlaying.videoId) {
-    playerArea.className = '';
-    playerArea.innerHTML = '';
-    const iframe = document.createElement('iframe');
-    iframe.className = 'player';
-    iframe.src = 'https://www.youtube.com/embed/' + nowPlaying.videoId + '?autoplay=1';
-    iframe.title = nowPlaying.title;
-    iframe.allow = 'autoplay; encrypted-media';
-    playerArea.appendChild(iframe);
   } else {
     playerArea.className = '';
     playerArea.innerHTML = '';
+
+    // ファイルを直接開いている（file://）と YouTube に埋め込みを拒否されるので、
+    // そのときは埋め込みプレイヤーを出さずにリンクだけにする
+    if (canEmbed(nowPlaying)) {
+      const iframe = document.createElement('iframe');
+      iframe.className = 'player';
+      iframe.src = 'https://www.youtube.com/embed/' + nowPlaying.videoId + '?autoplay=1';
+      iframe.title = nowPlaying.title;
+      iframe.allow = 'autoplay; encrypted-media';
+      playerArea.appendChild(iframe);
+    }
+
+    // 埋め込みを権利者が禁止している曲もある（エラー153）。
+    // どの場合でも再生できるように、YouTube で開くリンクは必ず出しておく
     const link = document.createElement('a');
     link.href = nowPlaying.url;
     link.target = '_blank';
     link.rel = 'noopener';
-    link.textContent = nowPlaying.title + ' を YouTube Music で開く';
+    link.textContent = '▶ 「' + nowPlaying.title + '」を YouTube Music で開く';
     playerArea.appendChild(link);
+
+    const note = document.createElement('p');
+    note.className = 'muted';
+    note.style.margin = '4px 0 0';
+    note.textContent = IS_FILE_URL
+      ? 'ファイルを直接開いているため、ここでは埋め込み再生できません（YouTube のエラー153）。別ウィンドウの YouTube Music で再生します。ウィンドウが開かないときは上のリンクから'
+      : '「エラー153」と出て再生できない曲は、埋め込みが禁止されています。上のリンクから再生してください';
+    playerArea.appendChild(note);
   }
 
   ratingArea.style.display = nowPlaying ? '' : 'none';
@@ -227,12 +312,35 @@ function render() {
 }
 
 // ============================================================
-// 再生中の曲への評価
+// 再生中の曲への評価・スキップ
 //   👍 高評価: そのまま再生を続ける（候補には残す）
-//   👎 低評価: 候補一覧から削除し、残りの候補からランダムに次の曲を自動再生する
+//   👎 低評価: 再生を止めて次の曲へ進む。曲は候補一覧に残したまま
+//   ⏭ スキップ: 評価をつけずに次の曲へ進む。曲は候補一覧に残したまま
 //   （最初にどの曲を再生するかは人がボタンを押して決める。
-//    低評価による削除・切り替えのみ自動にする、とチームで決定済み）
+//    次の曲への切り替えだけ自動にする、とチームで決定済み）
 // ============================================================
+
+// いま再生している曲を除いた候補から、次に再生する1曲をランダムに選ぶ。
+// 他に候補がなければ null（＝再生を停止する）
+function pickNextSong(data) {
+  const others = data.songs.filter((s) => s.id !== data.nowPlayingId);
+  if (!others.length) return null;
+  return others[Math.floor(Math.random() * others.length)];
+}
+
+// 次の曲へ進む。曲は削除しない
+function goToNextSong(messageWhenNext, messageWhenEnd) {
+  const data = loadData();
+  if (!data.nowPlayingId) return;
+
+  const next = pickNextSong(data);
+  data.nowPlayingId = next ? next.id : null;
+  suggestedId = null;
+  saveData(data);
+  render();
+  ratingMessage.textContent = next ? messageWhenNext : messageWhenEnd;
+  syncPlayerWindow(next);   // 前の曲の音を止めて、次の曲に切り替える
+}
 
 document.getElementById('rate-up').addEventListener('click', () => {
   const data = loadData();
@@ -241,23 +349,17 @@ document.getElementById('rate-up').addEventListener('click', () => {
 });
 
 document.getElementById('rate-down').addEventListener('click', () => {
-  const data = loadData();
-  const currentIndex = data.songs.findIndex((s) => s.id === data.nowPlayingId);
-  if (currentIndex === -1) return;
+  goToNextSong(
+    '👎 低評価にしました。候補には残したまま、次の曲を再生します',
+    '👎 低評価にしました。他に候補がないため停止しました（候補には残っています）'
+  );
+});
 
-  data.songs.splice(currentIndex, 1);
-
-  const next = data.songs.length
-    ? data.songs[Math.floor(Math.random() * data.songs.length)]
-    : null;
-
-  data.nowPlayingId = next ? next.id : null;
-  suggestedId = null;
-  saveData(data);
-  render();
-  ratingMessage.textContent = next
-    ? '👎 低評価にしました。候補から削除し、次の曲を再生します'
-    : '👎 低評価にしました。候補から削除しました。他に候補がないため停止しました';
+document.getElementById('skip').addEventListener('click', () => {
+  goToNextSong(
+    '⏭ スキップしました。次の曲を再生します',
+    '⏭ スキップしました。他に候補がないため停止しました'
+  );
 });
 
 document.getElementById('pick-random').addEventListener('click', () => {
@@ -271,6 +373,25 @@ document.getElementById('pick-random').addEventListener('click', () => {
   suggestedId = picked.id;
   render();
   randomMessage.textContent = '🎲「' + picked.title + '」を選びました。再生するには「再生」ボタンを押してください';
+});
+
+fetchTitleBtn.addEventListener('click', async () => {
+  const url = urlInput.value.trim();
+  if (!url) {
+    fetchMessage.textContent = '先に URL を貼ってください';
+    return;
+  }
+
+  fetchTitleBtn.disabled = true;
+  fetchMessage.textContent = '取得中…';
+  try {
+    titleInput.value = await fetchTitleFromUrl(url);
+    fetchMessage.textContent = '曲名を取得しました。直したいときは書き換えてから追加してください';
+  } catch {
+    fetchMessage.textContent = '取得できませんでした（ネットワークが使えないか、URL が違うかもしれません）。曲名は手で入力してください';
+  } finally {
+    fetchTitleBtn.disabled = false;
+  }
 });
 
 document.getElementById('add').addEventListener('click', () => {
