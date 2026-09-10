@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>おすすめ上位10曲</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        h1 {
+            margin-bottom: 30px;
+        }
+
+        .song {
+            border-bottom: 1px solid #ccc;
+            padding: 20px 0;
+        }
+
+        .rank {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .name {
+            font-size: 18px;
+            margin: 5px 0;
+        }
+
+        .score {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        audio {
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>おすすめ上位10曲</h1>
+
+<div id="songs">
+    読み込み中...
+</div>
+
+<script>
+
+async function main() {
+
+    const top10Response = await fetch("top10.json");
+    const top10 = await top10Response.json();
+
+    const songsResponse = await fetch("songs.json");
+    const songs = await songsResponse.json();
+
+    const songMap = new Map(
+        songs.map(song => [song.id, song])
+    );
+
+    const container = document.getElementById("songs");
+
+    container.innerHTML = "";
+
+    top10.forEach((result, index) => {
+
+        const song = songMap.get(result.id);
+
+        if (!song) {
+            return;
+        }
+
+        const div = document.createElement("div");
+
+        div.className = "song";
+
+        div.innerHTML = `
+            <div class="rank">#${index + 1}</div>
+
+            <div class="name">
+                ${escapeHtml(song.name)}
+            </div>
+
+            <div>
+                アーティスト: ${escapeHtml(song.username)}
+            </div>
+
+            <div class="score">
+                予測スコア: ${result.score.toFixed(3)}
+            </div>
+
+            <audio controls preload="none">
+                <source src="${song.preview_url}" type="audio/mpeg">
+                お使いのブラウザはaudioタグに対応していません。
+            </audio>
+        `;
+
+        container.appendChild(div);
+    });
+}
+
+
+// HTMLエスケープ
+function escapeHtml(text) {
+
+    const div = document.createElement("div");
+
+    div.textContent = text;
+
+    return div.innerHTML;
+}
+
+
+main().catch(error => {
+
+    console.error(error);
+
+    document.getElementById("songs").textContent =
+        "読み込みに失敗しました: " + error;
+
+});
+
+</script>
+
+</body>
+</html>

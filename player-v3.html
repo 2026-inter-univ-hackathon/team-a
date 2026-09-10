@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>部室BGM</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        button {
+            margin: 5px;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+
+        #now-playing {
+            margin: 20px 0;
+        }
+
+        .song {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+        }
+
+        .song:hover {
+            background: #f5f5f5;
+        }
+
+        #status {
+            margin-top: 10px;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>部室BGM</h1>
+
+<p>
+    再生ボタンを押すだけで、部室のBGMを流すシンプルな音楽プレイヤー
+</p>
+
+<section>
+    <h2>再生中</h2>
+
+    <div id="now-playing">
+        まだ再生していません
+    </div>
+
+    <audio id="audio" controls></audio>
+
+    <div>
+        <button id="like-button">👍 高評価</button>
+        <button id="dislike-button">👎 低評価</button>
+        <button id="skip-button">⏭ スキップ</button>
+    </div>
+
+    <div id="status"></div>
+</section>
+
+<section>
+    <h2>曲一覧</h2>
+    <div id="song-list">
+        曲を読み込んでいます…
+    </div>
+</section>
+
+<section>
+    <h2>再生履歴</h2>
+
+    <button id="export-button">
+        play_history.json を保存
+    </button>
+
+    <button id="clear-button">
+        ローカル履歴を削除
+    </button>
+
+    <p>
+        保存件数: <span id="history-count">0</span>
+    </p>
+</section>
+
+<script>
+"use strict";
+
+/*
+ * ========================================
+ * データ
+ * ========================================
+ */
+
+let songs = [];
+let currentSong = null;
+
+let playbackStartedAt = null;
+let liked = "none";
+let skipped = false;
+
+/*
+ * 1ページを1セッションとして扱う。
+ *
+ * 例:
+ * 20260909-183712-a1b2c3d4
+ */
+const sessionId = createSessionId();
+
+
+/*
+ * ========================================
+ * session_id
+ * ========================================
+ */
+
+function createSessionId() {
+    const now = new Date();
+
+    const timestamp =
+        now.getFullYear().toString() +
+        String(now.getMonth() + 1).padStart(2, "0") +
+        String(now.getDate()).padStart(2, "0") +
+        "-" +
+        String(now.getHours()).padStart(2, "0") +
+        String(now.getMinutes()).padStart(2, "0") +
+        String(now.getSeconds()).padStart(2, "0");
+
+    const random =
+        crypto.randomUUID
+            ? crypto.randomUUID().split("-")[0]
+            : Math.random().toString(16).slice(2, 10);
+
+    return `${timestamp}-${random}`;
+}
+
+
+/*
+ * ========================================
+ * songs.json 読み込み
+ * ========================================
+ */
+
+async function loadSongs() {
+    try {
+        const response = await fetch("songs.json");
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        songs = await response.json();
+
+        renderSongList();
+
+    } catch (error) {
+        console.error(error);
+
+        document.getElementById("song-list").textContent =
+            "曲の読み込みに失敗しました。";
+    }
+}
+
+
+/*
+ * ========================================
+ * 曲一覧
+ * ========================================
+ */
+
+function renderSongList() {
+    const list = document.getElementById("song-list");
+
+    list.innerHTML = "";
+
+    for (const song of songs) {
+        const element = document.createElement("div");
+
+        element.className = "song";
+
+        element.textContent =
+            `${song.name} - ${song.username}`;
+
+        element.addEventListener("click", () => {
+            playSong(song);
+        });
+
+        list.appendChild(element);
+    }
+}
+
+
+/*
+ * ========================================
+ * 曲再生
+ * ========================================
+ */
+
+function playSong(song) {
+
+    /*
+     * 現在曲がある場合は、
+     * その再生ログを確定する。
+     */
+    if (currentSong !== null) {
+        finishPlayback();
+    }
+
+    currentSong = song;
+
+    liked = "none";
+    skipped = false;
+
+    playbackStartedAt = new Date();
+
+    const audio = document.getElementById("audio");
+
+    audio.src = song.preview_url;
+
+    document.getElementById("now-playing").textContent =
+        `${song.name} - ${song.username}`;
+
+    document.getElementById("status").textContent =
+        `session_id: ${sessionId}`;
+
+    audio.play().catch(error => {
+        console.error("再生できませんでした:", error);
+    });
+}
+
+
+/*
+ * ========================================
+ * Like / Dislike
+ * ========================================
+ */
+
+document.getElementById("like-button").addEventListener("click", () => {
+
+    if (currentSong === null) {
+        return;
+    }
+
+    liked = "like";
+
+    document.getElementById("status").textContent =
+        "👍 高評価しました";
+});
+
+
+document.getElementById("dislike-button").addEventListener("click", () => {
+
+    if (currentSong === null) {
+        return;
+    }
+
+    liked = "dislike";
+
+    document.getElementById("status").textContent =
+        "👎 低評価しました";
+});
+
+
+/*
+ * ========================================
+ * Skip
+ * ========================================
+ */
+
+document.getElementById("skip-button").addEventListener("click", () => {
+
+    if (currentSong === null) {
+        return;
+    }
+
+    skipped = true;
+
+    finishPlayback();
+
+    /*
+     * 次の曲へ
+     */
+    playNextSong();
+});
+
+
+/*
+ * ========================================
+ * 次の曲
+ * ========================================
+ */
+
+function playNextSong() {
+
+    if (songs.length === 0) {
+        return;
+    }
+
+    if (currentSong === null) {
+        playSong(songs[0]);
+        return;
+    }
+
+    const currentIndex =
+        songs.findIndex(song => song.id === currentSong.id);
+
+    const nextIndex =
+        (currentIndex + 1) % songs.length;
+
+    playSong(songs[nextIndex]);
+}
+
+
+/*
+ * ========================================
+ * 再生終了
+ * ========================================
+ */
+
+const audio = document.getElementById("audio");
+
+
+audio.addEventListener("ended", () => {
+
+    if (currentSong === null) {
+        return;
+    }
+
+    /*
+     * 曲を最後まで聴いた場合。
+     *
+     * skipped = false
+     */
+    skipped = false;
+
+    finishPlayback();
+
+    /*
+     * 次の曲
+     */
+    playNextSong();
+});
+
+
+/*
+ * ========================================
+ * 再生ログ確定
+ * ========================================
+ */
+
+function finishPlayback() {
+
+    if (currentSong === null || playbackStartedAt === null) {
+        return;
+    }
+
+    const now = new Date();
+
+    /*
+     * 実際に何秒再生したか。
+     *
+     * audio.currentTime を使うことで、
+     * 「曲開始から何秒の位置まで再生されたか」
+     * を取得する。
+     */
+    const playedSeconds = Number(
+        audio.currentTime.toFixed(3)
+    );
+
+    const historyEntry = {
+        session_id: sessionId,
+
+        song_id: currentSong.id,
+
+        started_at: playbackStartedAt.toISOString(),
+
+        played_seconds: playedSeconds,
+
+        skipped: skipped,
+
+        liked: liked
+    };
+
+    saveHistory(historyEntry);
+
+    console.log("再生ログ:", historyEntry);
+
+    currentSong = null;
+    playbackStartedAt = null;
+    liked = "none";
+    skipped = false;
+}
+
+
+/*
+ * ========================================
+ * localStorageへの保存
+ * ========================================
+ */
+
+function getHistory() {
+
+    const data =
+        localStorage.getItem("play_history");
+
+    if (!data) {
+        return [];
+    }
+
+    try {
+        return JSON.parse(data);
+    } catch (error) {
+        console.error(error);
+        return [];
+    }
+}
+
+
+function saveHistory(entry) {
+
+    const history = getHistory();
+
+    history.push(entry);
+
+    localStorage.setItem(
+        "play_history",
+        JSON.stringify(history)
+    );
+
+    updateHistoryCount();
+}
+
+
+/*
+ * ========================================
+ * JSONとして保存
+ * ========================================
+ */
+
+document.getElementById("export-button")
+    .addEventListener("click", () => {
+
+        const history = getHistory();
+
+        const json = JSON.stringify(
+            history,
+            null,
+            2
+        );
+
+        const blob = new Blob(
+            [json],
+            {
+                type: "application/json"
+            }
+        );
+
+        const url =
+            URL.createObjectURL(blob);
+
+        const a =
+            document.createElement("a");
+
+        a.href = url;
+
+        a.download = "play_history.json";
+
+        a.click();
+
+        URL.revokeObjectURL(url);
+    });
+
+
+/*
+ * ========================================
+ * 履歴削除
+ * ========================================
+ */
+
+document.getElementById("clear-button")
+    .addEventListener("click", () => {
+
+        if (!confirm(
+            "ローカルに保存されている再生履歴を削除しますか？"
+        )) {
+            return;
+        }
+
+        localStorage.removeItem("play_history");
+
+        updateHistoryCount();
+    });
+
+
+/*
+ * ========================================
+ * 件数表示
+ * ========================================
+ */
+
+function updateHistoryCount() {
+
+    const history = getHistory();
+
+    document.getElementById("history-count")
+        .textContent = history.length;
+}
+
+
+/*
+ * ========================================
+ * ページを閉じる場合
+ * ========================================
+ *
+ * 再生中だった曲についても可能な限り
+ * ログを残す。
+ */
+
+window.addEventListener("beforeunload", () => {
+
+    if (currentSong !== null) {
+        finishPlayback();
+    }
+});
+
+
+/*
+ * ========================================
+ * 初期化
+ * ========================================
+ */
+
+updateHistoryCount();
+
+loadSongs();
+
+</script>
+
+</body>
+</html>

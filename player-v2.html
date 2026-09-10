@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>部室BGM</title>
+
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --bg: #fff;
+      --line: #d8dce2;
+      --accent: #2b6cb0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family:
+        "Hiragino Sans",
+        "Yu Gothic",
+        system-ui,
+        sans-serif;
+
+      color: var(--fg);
+      background: var(--bg);
+
+      margin: 0;
+      padding: 24px;
+
+      line-height: 1.6;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin: 0 0 4px;
+    }
+
+    h2 {
+      font-size: 1rem;
+      margin: 0 0 12px;
+    }
+
+    .lead {
+      color: #666;
+      margin: 0 0 24px;
+    }
+
+    section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    button {
+      font: inherit;
+      padding: 8px 16px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    button:hover {
+      opacity: .85;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .muted {
+      color: #666;
+      font-size: .9rem;
+    }
+
+    .song-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .song-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      padding: 8px 0;
+
+      border-bottom: 1px solid var(--line);
+    }
+
+    .song-item:last-child {
+      border-bottom: 0;
+    }
+
+    .song-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .song-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .song-artist {
+      color: #666;
+      font-size: .85rem;
+    }
+
+    .song-item.is-playing {
+      background: #f3f6fa;
+    }
+
+    .song-item.is-playing .song-title {
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .btn-sub {
+      background: #6b7280;
+    }
+
+    .btn-danger {
+      background: #b91c1c;
+    }
+
+    .now-playing {
+      margin-bottom: 12px;
+    }
+
+    .now-playing-title {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+
+    .now-playing-artist {
+      color: #666;
+    }
+
+    audio {
+      width: 100%;
+      margin: 12px 0;
+    }
+
+    .player-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .player-controls button {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .status {
+      min-height: 1.6em;
+      margin-top: 8px;
+    }
+
+    .source-link {
+      font-size: .85rem;
+      color: #666;
+    }
+  </style>
+</head>
+
+<body>
+
+<main>
+
+  <h1>部室BGM</h1>
+
+  <p class="lead">
+    再生ボタンを押すだけで、部室のBGMを流すシンプルな音楽プレイヤー
+  </p>
+
+
+  <!-- ============================================================
+       再生中
+       ============================================================ -->
+
+  <section>
+
+    <h2>再生中</h2>
+
+    <div id="player-area" class="muted">
+      まだ再生していません
+    </div>
+
+    <div id="controls" style="display:none;">
+
+      <audio id="audio" controls></audio>
+
+      <div class="player-controls">
+
+        <button id="rate-up">
+          👍 高評価
+        </button>
+
+        <button id="rate-down" class="btn-sub">
+          👎 低評価
+        </button>
+
+        <button id="skip" class="btn-sub">
+          ⏭ スキップ
+        </button>
+
+      </div>
+
+      <div id="rating-message" class="muted status"></div>
+
+    </div>
+
+  </section>
+
+
+  <!-- ============================================================
+       曲一覧
+       ============================================================ -->
+
+  <section>
+
+    <h2>曲一覧</h2>
+
+    <ul id="song-list" class="song-list"></ul>
+
+    <div id="empty-message" class="muted">
+      曲を読み込んでいます…
+    </div>
+
+  </section>
+
+
+</main>
+
+
+<script>
+
+/* ============================================================
+   データ
+   ============================================================ */
+
+const SONGS_URL = "songs.json";
+
+let songs = [];
+let nowPlayingId = null;
+
+
+/* ============================================================
+   DOM
+   ============================================================ */
+
+const songList = document.getElementById("song-list");
+const emptyMessage = document.getElementById("empty-message");
+
+const playerArea = document.getElementById("player-area");
+const controls = document.getElementById("controls");
+
+const audio = document.getElementById("audio");
+
+const rateUpButton = document.getElementById("rate-up");
+const rateDownButton = document.getElementById("rate-down");
+const skipButton = document.getElementById("skip");
+
+const ratingMessage = document.getElementById("rating-message");
+
+
+/* ============================================================
+   songs.json 読み込み
+   ============================================================ */
+
+async function loadSongs() {
+
+  try {
+
+    const response = await fetch(SONGS_URL);
+
+    if (!response.ok) {
+      throw new Error(
+        `songs.json の読み込みに失敗しました (${response.status})`
+      );
+    }
+
+    const data = await response.json();
+
+    if (!Array.isArray(data)) {
+      throw new Error("songs.json が配列ではありません");
+    }
+
+    songs = data.filter(song => song.preview_url);
+
+    renderSongList();
+
+  } catch (error) {
+
+    console.error(error);
+
+    emptyMessage.textContent =
+      "songs.json を読み込めませんでした";
+
+  }
+
+}
+
+
+/* ============================================================
+   曲一覧
+   ============================================================ */
+
+function renderSongList() {
+
+  songList.innerHTML = "";
+
+  if (songs.length === 0) {
+
+    emptyMessage.textContent =
+      "再生できる曲がありません";
+
+    return;
+
+  }
+
+  emptyMessage.style.display = "none";
+
+
+  for (const song of songs) {
+
+    const li = document.createElement("li");
+
+    li.className = "song-item";
+
+    if (song.id === nowPlayingId) {
+      li.classList.add("is-playing");
+    }
+
+
+    /* 曲情報 */
+
+    const info = document.createElement("div");
+
+    info.className = "song-info";
+
+
+    const title = document.createElement("div");
+
+    title.className = "song-title";
+
+    title.textContent = song.name || "Unknown";
+
+
+    const artist = document.createElement("div");
+
+    artist.className = "song-artist";
+
+    artist.textContent =
+      song.username
+        ? song.username
+        : "Unknown";
+
+
+    info.appendChild(title);
+    info.appendChild(artist);
+
+
+    /* 再生ボタン */
+
+    const playButton = document.createElement("button");
+
+    playButton.textContent = "再生";
+
+    playButton.addEventListener("click", () => {
+
+      playSong(song);
+
+    });
+
+
+    li.appendChild(info);
+    li.appendChild(playButton);
+
+    songList.appendChild(li);
+
+  }
+
+}
+
+
+/* ============================================================
+   曲を再生
+   ============================================================ */
+
+function playSong(song) {
+
+  if (!song || !song.preview_url) {
+    return;
+  }
+
+
+  nowPlayingId = song.id;
+
+
+  /* 表示 */
+
+  playerArea.innerHTML = "";
+
+
+  const info = document.createElement("div");
+
+  info.className = "now-playing";
+
+
+  const title = document.createElement("div");
+
+  title.className = "now-playing-title";
+
+  title.textContent =
+    song.name || "Unknown";
+
+
+  const artist = document.createElement("div");
+
+  artist.className = "now-playing-artist";
+
+  artist.textContent =
+    song.username
+      ? song.username
+      : "Unknown";
+
+
+  const source = document.createElement("a");
+
+  source.className = "source-link";
+
+  source.href = song.url;
+
+  source.target = "_blank";
+
+  source.rel = "noopener noreferrer";
+
+  source.textContent =
+    "Freesound で見る";
+
+
+  info.appendChild(title);
+  info.appendChild(artist);
+  info.appendChild(source);
+
+  playerArea.appendChild(info);
+
+
+  controls.style.display = "";
+
+
+  /* オーディオ */
+
+  audio.src = song.preview_url;
+
+  audio.currentTime = 0;
+
+
+  /* 一覧更新 */
+
+  renderSongList();
+
+
+  /* ユーザーの「再生」操作から呼ばれるため autoplay 制限に引っかかりにくい */
+
+  audio.play()
+    .catch(error => {
+
+      console.error(error);
+
+      ratingMessage.textContent =
+        "再生できませんでした。再生ボタンを押してください";
+
+    });
+
+
+}
+
+
+/* ============================================================
+   次の曲をランダム選択
+   ============================================================ */
+
+function pickNextSong() {
+
+  const candidates =
+    songs.filter(song => song.id !== nowPlayingId);
+
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+
+  const index =
+    Math.floor(Math.random() * candidates.length);
+
+
+  return candidates[index];
+
+}
+
+
+/* ============================================================
+   次の曲へ
+   ============================================================ */
+
+function goToNextSong(message) {
+
+  const next = pickNextSong();
+
+
+  if (!next) {
+
+    audio.pause();
+
+    audio.removeAttribute("src");
+
+    nowPlayingId = null;
+
+    renderSongList();
+
+    playerArea.textContent =
+      "他に再生できる曲がありません";
+
+    controls.style.display = "none";
+
+    return;
+
+  }
+
+
+  ratingMessage.textContent = message;
+
+  playSong(next);
+
+}
+
+
+/* ============================================================
+   高評価
+   ============================================================
+
+   現段階では「ボタンのみ」。
+
+   後でここに
+
+     - localStorage
+     - 再生履歴
+     - 機械学習用ログ
+
+   などを追加できる。
+
+   ============================================================ */
+
+rateUpButton.addEventListener("click", () => {
+
+  if (!nowPlayingId) {
+    return;
+  }
+
+  ratingMessage.textContent =
+    "👍 高評価";
+
+});
+
+
+/* ============================================================
+   低評価
+
+   低評価 → 曲は削除しない → 次の曲へ
+   ============================================================ */
+
+rateDownButton.addEventListener("click", () => {
+
+  if (!nowPlayingId) {
+    return;
+  }
+
+  goToNextSong(
+    "👎 低評価にしました。次の曲へ"
+  );
+
+});
+
+
+/* ============================================================
+   Skip
+
+   評価はつけずに次の曲へ
+   ============================================================ */
+
+skipButton.addEventListener("click", () => {
+
+  if (!nowPlayingId) {
+    return;
+  }
+
+  goToNextSong(
+    "⏭ スキップしました。次の曲へ"
+  );
+
+});
+
+
+/* ============================================================
+   曲が終了したら自動的に次の曲
+   ============================================================ */
+
+audio.addEventListener("ended", () => {
+
+  if (!nowPlayingId) {
+    return;
+  }
+
+  goToNextSong(
+    "曲が終了しました。次の曲へ"
+  );
+
+});
+
+
+/* ============================================================
+   再生エラー
+   ============================================================ */
+
+audio.addEventListener("error", () => {
+
+  ratingMessage.textContent =
+    "音源を再生できませんでした";
+
+});
+
+
+/* ============================================================
+   初期化
+   ============================================================ */
+
+loadSongs();
+
+</script>
+
+</body>
+</html>
