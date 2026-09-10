@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>部室BGM</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #fff;
+        color: #111;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+    }
+
+    main {
+        width: 600px;
+        text-align: center;
+    }
+
+    h1 {
+        margin-bottom: 40px;
+    }
+
+    #player {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        margin-bottom: 30px;
+    }
+
+    #player iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+    }
+
+    #title {
+        font-size: 28px;
+        margin: 10px 0;
+    }
+
+    #artist {
+        color: #666;
+        margin-bottom: 40px;
+    }
+
+    button {
+        border: 1px solid #111;
+        background: #fff;
+        padding: 14px 24px;
+        font-size: 16px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: #111;
+        color: #fff;
+    }
+
+    #play {
+        font-size: 24px;
+        padding: 20px 70px;
+        margin-bottom: 40px;
+    }
+
+    .controls {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .mode {
+        margin-top: 30px;
+    }
+
+    #status {
+        margin-top: 20px;
+        color: #666;
+    }
+</style>
+</head>
+
+<body>
+<main>
+    <h1>部室BGM</h1>
+
+    <div id="player"></div>
+
+    <button id="play">再生</button>
+
+    <div id="title">---</div>
+    <div id="artist">---</div>
+
+    <div class="controls">
+        <button id="like">👍 高評価</button>
+        <button id="dislike">👎 低評価</button>
+        <button id="skip">⏭ Skip</button>
+    </div>
+
+    <div class="controls mode">
+        <button id="random">ランダム再生</button>
+        <button id="sequential">頭から</button>
+    </div>
+
+    <div id="status">再生方式：ランダム</div>
+</main>
+
+<script>
+let songs = [];
+let current = -1;
+let mode = "random";
+
+const player = document.getElementById("player");
+const title = document.getElementById("title");
+const artist = document.getElementById("artist");
+const status = document.getElementById("status");
+
+
+// songs.jsonを読み込む
+fetch("songs.json")
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("songs.jsonの読み込みに失敗しました");
+        }
+
+        return response.json();
+    })
+    .then(data => {
+        songs = data;
+        status.textContent = "再生方式：ランダム";
+    })
+    .catch(error => {
+        console.error(error);
+        status.textContent = "songs.jsonを読み込めません";
+    });
+
+
+// YouTube URLから動画IDを取得する
+function getYouTubeVideoId(url) {
+    try {
+        const parsedUrl = new URL(url);
+
+        // https://music.youtube.com/watch?v=XXXXXXXXXXX
+        if (parsedUrl.searchParams.has("v")) {
+            return parsedUrl.searchParams.get("v");
+        }
+
+        // https://youtu.be/XXXXXXXXXXX
+        if (parsedUrl.hostname === "youtu.be") {
+            return parsedUrl.pathname.substring(1);
+        }
+
+        // https://www.youtube.com/embed/XXXXXXXXXXX
+        if (parsedUrl.pathname.startsWith("/embed/")) {
+            return parsedUrl.pathname.split("/embed/")[1];
+        }
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+
+// YouTubeプレイヤーを表示する
+function playSong(song) {
+    const videoId = getYouTubeVideoId(song.url);
+
+    if (!videoId) {
+        status.textContent = "YouTube URLが正しくありません";
+        return;
+    }
+
+    player.innerHTML = `
+        <iframe
+            src="https://www.youtube.com/embed/${videoId}?autoplay=1"
+            title="${escapeHtml(song.title)}"
+            allow="autoplay; encrypted-media"
+            allowfullscreen>
+        </iframe>
+    `;
+}
+
+
+// HTMLエスケープ
+function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+
+// 次の曲を選択する
+function nextSong() {
+    if (!songs.length) {
+        status.textContent = "曲が読み込まれていません";
+        return;
+    }
+
+    if (mode === "random") {
+        current = Math.floor(Math.random() * songs.length);
+    } else {
+        current = (current + 1) % songs.length;
+    }
+
+    const song = songs[current];
+
+    title.textContent = song.title;
+    artist.textContent = song.artist;
+
+    playSong(song);
+}
+
+
+// 再生
+document.getElementById("play").onclick = () => {
+    nextSong();
+};
+
+
+// Skip
+document.getElementById("skip").onclick = () => {
+    nextSong();
+};
+
+
+// ランダム再生
+document.getElementById("random").onclick = () => {
+    mode = "random";
+    status.textContent = "再生方式：ランダム";
+};
+
+
+// 頭から
+document.getElementById("sequential").onclick = () => {
+    mode = "sequential";
+    current = -1;
+    status.textContent = "再生方式：頭から";
+};
+
+
+// 高評価
+document.getElementById("like").onclick = () => {
+    // 今は何もしない
+};
+
+
+// 低評価
+document.getElementById("dislike").onclick = () => {
+    // 今は何もしない
+};
+</script>
+
+</body>
+</html>
