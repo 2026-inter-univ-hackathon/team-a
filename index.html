@@ -26,6 +26,9 @@
   button:hover { opacity: .85; }
   .row { display: flex; gap: 8px; align-items: center; }
   .muted { color: #666; font-size: .9rem; }
+  .freesound-section { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px; }
+  .freesound-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 12px; }
+  .freesound-player audio { width: 100%; margin-top: 12px; }
 
   .field { margin-bottom: 8px; }
   .song-list { list-style: none; margin: 0; padding: 0; }
@@ -95,6 +98,22 @@
       <button id="skip" class="btn-sub">⏭ スキップ</button>
     </div>
     <div id="rating-message" class="muted"></div>
+  </section>
+
+  <section class="freesound-section">
+    <h2>Freesound プレイヤー</h2>
+    <div class="freesound-controls">
+      <button id="freesound-rate-up">👍 高評価</button>
+      <button id="freesound-rate-down" class="btn-sub">👎 低評価</button>
+      <button id="freesound-skip" class="btn-sub">⏭ Skip</button>
+      <button id="freesound-not-song" class="btn-sub">曲ではない</button>
+    </div>
+    <div class="freesound-player">
+      <audio id="freesound-audio" controls preload="metadata">
+        <source src="" type="audio/mpeg">
+      </audio>
+    </div>
+    <div id="freesound-message" class="muted">Freesound で音を探します</div>
   </section>
 
 </main>
@@ -330,6 +349,26 @@ document.getElementById('skip').addEventListener('click', () => {
     '⏭ スキップしました。次の曲に切り替えました',
     '⏭ スキップしました。他に候補がないため停止しました'
   );
+});
+
+document.getElementById('freesound-rate-up').addEventListener('click', () => {
+  const msg = document.getElementById('freesound-message');
+  msg.textContent = '👍 高評価を付けました。Freesound の候補を残します';
+});
+
+document.getElementById('freesound-rate-down').addEventListener('click', () => {
+  const msg = document.getElementById('freesound-message');
+  msg.textContent = '👎 低評価を付けました。次の音源に進めます';
+});
+
+document.getElementById('freesound-skip').addEventListener('click', () => {
+  const msg = document.getElementById('freesound-message');
+  msg.textContent = '⏭ Skip しました。次の候補へ進めます';
+});
+
+document.getElementById('freesound-not-song').addEventListener('click', () => {
+  const msg = document.getElementById('freesound-message');
+  msg.textContent = '曲ではないと判断しました。候補から外します';
 });
 
 document.getElementById('pick-random').addEventListener('click', () => {
