@@ -15,14 +15,20 @@
 
 ## 使った技術
 
-- HTML / CSS / JavaScript（素のまま）
-- Python
-- 機械学習
-- データの保存: localStorage / JSON
-- 音源・楽曲メタデータ: Freesound API など
-- Git / GitHub
+* HTML / CSS / JavaScript
+* Python
+* 機械学習
+* JSON（楽曲データ・再生履歴・モデルデータの保存）
+* Freesound API（音源・楽曲メタデータの取得）
+* Git / GitHub
 
-ビルドツールやフレームワークは使用せず、index.html を直接開いて動かせる構成を基本としました。
+### 構成
+
+フロントエンドには HTML / CSS / JavaScript、バックエンドには Python を使用しています。
+
+Python サーバーが楽曲データや再生履歴を管理し、機械学習モデルによる次の楽曲の推薦を行います。
+
+ビルドツールやフロントエンドフレームワークは使用していません。
 
 
 ## どう開発したか
