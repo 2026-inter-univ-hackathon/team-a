@@ -45,34 +45,52 @@
 
 ## 動かし方
 
-GitHub リポジトリから以下のディレクトリを取得してください。
+GitHub リポジトリから以下を取得してください。
 
-- data/
-- ai/model3/
+```text
+data/
+ai/model4/
+```
 
-取得したファイルをすべて同じディレクトリに配置します。
+最終的に、リポジトリのルートディレクトリが以下のような構成になっていることを確認してください。
 
-最終的に、例えば以下のような構成にします。
+```text
+matchon/    
+ ├── play_history.json
+ ├── songs.json  
+ ├── model.json  
+ ├── player.html  
+ ├── server.py  
+ └── train.py  
+```
 
-soundon/  
-├── model.json  
-├── play_history.json  
-├── player.py  
-├── songs.json  
-└── train.py  
+リポジトリのルートディレクトリから以下を実行します。
 
-そのディレクトリで以下を実行します。
+```bash
+python3 server.py
+```
 
-python3 player.py
+サーバーが起動したら、ブラウザで以下にアクセスしてください。
+
+```text
+http://localhost:8000/
+```
 
 これで音楽プレイヤーが起動します。
 
-補足
+### 補足
 
-機械学習による選曲には ai/model3/ のモデルを使用しています。
-data/ には選曲に使用する音源データが含まれています。
+機械学習による選曲には `ai/model4/model.json` のモデルを使用しています。
 
-追加のビルドツールは必要ありません。
+`data/songs.json` には選曲対象となる音源データが含まれています。
+
+`data/play_history.json` には再生履歴やユーザーによる評価が保存され、機械学習に利用されます。
+
+`server.py` が `data/` のデータを読み込みながら、音楽プレイヤーと選曲機能を提供します。
+
+追加のビルドツールやパッケージ管理ツールは必要ありません。
+
+Python 3 がインストールされていれば実行できます。
 
 
 ## AI に任せなかった部分
